@@ -1,0 +1,986 @@
+---
+title: "Series de Tiempo"
+author: 'Gómez Rodríguez Angel Giovanni'
+date: "28 de noviembre de 2021"
+output:
+  pdf_document:
+    keep_tex: yes
+  html_document:
+    df_print: paged
+  word_document: default
+header-includes:
+- \usepackage[spanish]{babel}
+- \usepackage[utf8]{inputenc}
+- \decimalpoint
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{makecell}
+- \usepackage{xcolor}
+- \usepackage{polynom}
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+rm(list = ls(all.names = TRUE))
+gc()
+library(reticulate)
+knitr::opts_chunk$set(echo = F, warning = F, message = F, error = F, fig.height = 4, fig.width = 8)
+options(knitr.duplicate.label = "allow")
+library(forecast)
+library(xtable)
+library(knitr)
+library(tidyverse)
+library(latex2exp)
+options(kableExtra.latex.load_packages = FALSE)
+library(kableExtra)
+library(astsa)
+library(nortest)
+library(lmtest)
+library(timeSeries)
+library(tseries)
+library(TSA)
+library(ggplot2)
+library(itsmr)
+library(tsdl)
+library(imputeTS)
+library(polynom)
+library(timeDate)
+library(TTR)
+set.seed(1234)
+options(digits = 3)
+library(Hmisc)
+
+
+```
+
+
+
+\newpage
+
+
+# \colorbox{yellow}{Introducción.}
+
+La elección de Tesla como empresa para el proyecto es considerar una entidad que
+acelere la transición del mundo hacia la energía sostenible.
+
+En la actualidad, Tesla fabrica no solo vehículos totalmente eléctricos, sino 
+también productos de almacenamiento y generación de energía limpia infinitamente
+escalables. Nosotros al igual que Tesla creemos  que cuanto más rápido el mundo 
+deje de depender de los combustibles fósiles y avance hacia un futuro de cero 
+emisiones, es mejor.
+
+\newpage
+
+# \colorbox{yellow}{1. Analizar los datos de manera descriptiva.}
+
+\textbf{Grafique los datos, describa lo que observe (varianza constante o no 
+constante, descomposición clásica, tendencia, ciclos estacionales, periodicidad 
+de los ciclos).}
+
+```{r, echo = FALSE}
+setwd("C:/Users/52557/Desktop/Estadística")   # Se fija el directorio para
+                                              # establecer la ruta de datos
+TSLA<- read.csv("Tesla.csv")   # Se lee el archivo
+```
+
+Para la serie de tiempo se tienen datos mensuales, de donde:
+
+```{r, echo=FALSE,include=TRUE, fig.height= 4, fig.width=6}
+# Se configuran los  datos como una serie de tiempo, además se lee la columna 5, 
+# que es la de precios al cierre del mercado. Los datos empiezan a finales de 
+# junio de 2010 y terminan en julio de 2020 para que se contemplen los datos de 
+# finales de junio. Se contemplan intervalos mensuales.
+TeslaStockData <-ts(TSLA[,5], start = c(2010,6), end = c(2020,7), frequency = 12)
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot.ts(TeslaStockData, col = "springgreen2", xlab = "Tiempo", 
+     ylab = "Precio", xlim=c(2010,2021), lwd = 2, 
+     main = "Precios al cierre de las acciones de TSLA")}
+```
+
+# \colorbox{yellow}{Descripción de la serie}
+
+## \colorbox{cyan}{Varianza}
+
+A simple vista se observa una varianza no constante, ya que, si se la trazan bandas
+a la gráfica, estas cambian con el paso del tiempo. Pero para verificarlo, se debe
+realizar alguna prueba. De esta manera se tienen las hipótesis:
+$$H_{0}\text{: Varianza constante (homocedasticidad)  vs   }
+H_{a}\text{: Varianza no constante (heterocedasticidad)}$$
+
+
+Aplicando la \textit{Prueba de Breusch-Pagan}, se obtiene:
+```{r, echo= FALSE, include=TRUE}
+t = seq(2010+6/12,2020+7/12, by=1/12)  
+t2 = t*t
+modelo1 <- lm(TeslaStockData ~ t+t2)   # Establecemos el modelo lineal
+Y1 <- as.numeric(modelo1$residuals)
+X1 <- 1:length(modelo1$residuals)
+bptest(Y1 ~ X1)   
+
+```
+Y como el $p-value = 0.01 < 0.05$, se rechaza $H_0$ y se concluye que 
+\textbf{ la serie no tiene varianza constante.}
+
+\vspace{0.5cm}
+
+## \colorbox{cyan}{Descomposición clásica}
+
+Por la observación anterior,  se tiene que la varianza no es constante. Además, 
+se observa que hay cambios en la dispersión de los datos con respecto del tiempo,
+porque si se crearan bandas éstas cambiarían a lo largo del tiempo. Con estas 2 
+últimas observaciones se puede concluir de la gráfica que la serie es de un modelo
+multiplicativo. De donde:
+
+```{r, echo= FALSE}
+plot(decompose(TeslaStockData, type = "multiplicative"))
+```
+
+```{r, echo= FALSE}
+#Retomamos el modelo lineal
+t = seq(2010+6/12, 2020 + 7/12, by=1/12)
+t2 <- t*t
+modelo2 <- lm(TeslaStockData ~ t+t2)
+```
+
+```{r, echo=FALSE, include=FALSE}
+summary(modelo2)
+```
+
+## \colorbox{cyan}{Tendencia}
+
+Al analizar la tendencia, se le puede ajustar una recta mediante un \textit{modelo
+de regresión lineal.}
+
+```{r, echo=FALSE, include=TRUE, fig.height= 3, fig.width=6}
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(TeslaStockData, xlab = "Tiempo", ylab =" ", lwd = 2, main = "Tendencia")
+lines(t, modelo2$fit, col="springgreen3", lwd = 3)}
+```
+
+Se  puede apreciar que a pesar de tener pequeñas fluctuaciones,  \textbf{la
+serie tiene una tendencia que va a la alza.}
+
+
+```{r, echo=FALSE, include=FALSE,  fig.height= 3.5, fig.width=6}
+datossintendencia <- TeslaStockData - modelo2$fit
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(datossintendencia, col = "springgreen1" ,main = "Serie sin tendencia", 
+     lwd = 3, xlab = "Tiempo", ylab = " ")}
+```
+
+```{r, echo=FALSE}
+ciclo <- factor(cycle(TeslaStockData))
+modelo3 <- lm(datossintendencia ~ ciclo)
+```
+
+```{r, echo=FALSE, include=FALSE}
+summary(modelo3)
+```
+
+## \colorbox{cyan}{Ciclos}
+
+Los ciclos se ven de la siguiente manera:
+
+```{r, echo=FALSE, include=TRUE, fig.height= 3, fig.width=7}
+datosciclo <- ts(fitted(modelo3), start = c(2010,6), frequency = 12)
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(datosciclo, col = "springgreen4" ,main = "Ciclos", lwd = 3, xlab = "Tiempo",
+     ylab = " ")
+  minor.tick(nx = 8, tick.ratio = 0.5)
+}
+```
+
+El comportamiento de cada ciclo indica que el precio de las acciones:
+
+- Tiene su máximo valor en junio y luego disminuye, posteriormente cambia 
+  de manera constante 
+
+- Incrementa su valor en el mes de septiembre
+
+- Comienza a disminuir en diciembre, antes de que termine el año; alcanza su 
+  valor mínimo
+
+- Empieza a subir abruptamente en enero
+
+- Se mantiene constante durante marzo 
+
+- Sube bastante a partir del mes de abril hasta llegar a junio
+
+## \colorbox{cyan}{Periodicidad}
+
+\textbf{La periodicidad de los ciclos es anual.} Cada periodo comienza a partir 
+del mes de junio, esto se debe a que las acciones de Tesla, dan inicio el 29 de
+junio de 2010. Además, para contar con los 10 años completos, se concluye con el
+análisis de  datos en julio de 2020, pues así se pueden considerar los datos hasta
+inicios de julio de 2020, en una fecha a cercana a cuando Tesla comenzó con 
+el precio de sus acciones.
+
+
+## \colorbox{cyan}{Observaciones adicionales}
+
+Los datos históricos corresponden a una serie de tiempo que muestra el 
+comportamiento de los precios al cierre del mercado; el precio se maneja en 
+dólares. Se contemplan precios mensuales.
+
+El análisis de datos comienza a finales de junio de 2010 y termina en julio de 
+2020 con el objetivo de que se contemplen años completos y se tomen en cuenta
+los datos de finales de junio, ya que las acciones de Tesla empezaron el 29 de 
+junio de 2010.
+
+Finalmente, tras comparar la descomposición clásica con el modelo de regresión
+lineal, se puede observar que los ciclos y la tendencia son bastante similares 
+en ambos modelos.
+
+\newpage
+
+# \colorbox{yellow}{2. Métodos de imputación.}
+
+\textbf{Si la base presenta datos faltantes NA. Use algún método de imputación 
+de la paquetería imputeTS.}
+
+En este caso se contemplan los datos históricos de 11 años, es decir hasta julio
+del año 2021; posteriormente se eliminan los datos a partir de marzo de 2020, es 
+decir, a partir de que comienza la emergencia sanitaria a nivel mundial. El
+propósito de realizar esto es ver si la imputación es acertada.
+
+```{r, fig.height= 4, fig.width=7}
+
+TeslaCompleto <- ts(TSLA[,5], start = c(2010,6), end = c(2021,7), frequency = 12)
+
+TeslaStockDataPan <- ts(TSLA[,5], start = c(2010,6), end = c(2021,7), frequency = 12)
+
+plot.ts(TeslaStockDataPan, main="Serie completa", type="l", lwd = 2, xlab = "Tiempo", 
+     ylab = "Precio")
+
+
+TeslaStockDataPan[118:134]=NA
+```
+
+```{r, fig.height= 3.5, fig.width=7}
+# Métodos de imputación
+
+plot(TeslaStockDataPan, main="Imputación por Splines", type="l",
+      col = "orchid", lwd = 3, xlab = "Tiempo", 
+     ylab = "Precio")
+imp1<-imputeTS::na_interpolation(TeslaStockDataPan, option="spline")
+lines(imp1, col="red", type="l", lwd = 1)
+
+plot(TeslaStockDataPan, main="Imputación usando suavizamiento de Kalman", type="l",
+     col = "cyan", lwd = 3, xlab = "Tiempo", 
+     ylab = "Precio")
+imp4<-imputeTS::na_seadec(TeslaStockDataPan,algorithm ="kalman")
+lines(imp4, col="red", type="l", lwd = 1)
+
+plot(TeslaStockDataPan, main="Imputación usando el modelo ajustado por máxima
+     verosimilitud", type="l", col = "blue", lwd = 3, xlab = "Tiempo", 
+     ylab = "Precio")
+imp5<-imputeTS::na_kalman(TeslaStockDataPan,model="StructTS", smooth=TRUE)
+lines(imp5, col="red", type="l", lwd = 1)
+```
+
+Comparativa:
+\begin{center}
+\begin{tabular}{| c | c | c | c | c | }
+\hline
+ Periodo     & Valor real  &  Splines   & Kalman   &  Máxima verosimilitud \\ 
+ \hline
+ Marzo 2020  & 156.38      &  61.42     & 112.53   &  109.47 \\  
+ \hline
+ Agosto 2020 & 429.01      &  38.65     & 114.93   &  111.24 \\  
+ \hline
+ Enero 2021  & 675.50      &  60.11     & 118.61   &  118.47 \\  
+ \hline
+ Junio 2021  & 687.20      &  131.17    & 125.72   &  119.51 \\  
+ \hline
+\end{tabular}
+\end{center}
+
+Conclusiones
+
+- El "mejor" método para imputar estos datos es con  el modelo ajustado por máxima
+ verosimilitud. El método más deficiente es el de splines.
+
+- Realmente ninguno de los métodos se acerca a los datos reales, esto debido a que
+  Tesla ha tenido un crecimiento enorme en meses recientes.
+
+\newpage
+
+# \colorbox{yellow}{3. Usar un método de descomposición clásico.}
+
+\textbf{Pueden ser diferencias, filtros, modelos de regresión, suavizamientos 
+exponenciales para calcular sus componentes.}
+
+Regresando a la serie original que contempla datos de 2010 a 2020.
+
+Para realizar la descomposición clásica de esta serie de tiempo, hay que estabilizar
+la varianza, para esto, se eligirá a la transformación logaritmica:
+
+```{r, echo= FALSE, include=TRUE}
+logTeslaData <- log(TeslaStockData)
+```
+
+Y verificamos si pasa la Prueba De esta manera se tienen las hipótesis:
+$$H_{0}\text{: Varianza constante (homocedasticidad)  vs   }
+H_{a}\text{: Varianza no constante (heterocedasticidad)}$$
+
+Aplicando la \textit{Prueba de Breusch-Pagan}, se obtiene:
+
+```{r, echo= FALSE, include=TRUE}
+t = seq(2010+6/12,2020+7/12, by=1/12)  
+t2 = t*t
+modelo1 <- lm(logTeslaData ~ t+t2)   # Establecemos el modelo lineal
+Y1 <- as.numeric(modelo1$residuals)
+X1 <- 1:length(modelo1$residuals)
+bptest(Y1 ~ X1)   
+```
+
+Y como el $p-value = 0.06 > 0.05$, se acepta $H_0$ y se concluye que 
+\textbf{ la serie ya tiene varianza constante.}
+
+```{r, echo= FALSE}
+## \colorbox{cyan}{Ajuste de curvas}
+# Tomamos el modelo de regresión lineal
+t = seq(2010+6/12, 2020 + 7/12,by=1/12)
+t2 <- t*t
+modelo2 <- lm(logTeslaData ~ t+t2)
+```
+
+```{r, echo=FALSE, include=FALSE}
+summary(modelo2)
+```
+
+```{r, echo=FALSE, include=FALSE, fig.height= 4, fig.width=6}
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(logTeslaData, xlab = "Tiempo", ylab =" ", lwd = 2,
+      main = "Tendencia, serie con log")
+lines(t, modelo2$fit, col="springgreen3", lwd = 3)}
+```
+
+```{r, echo=FALSE, include=FALSE,  fig.height= 2.5, fig.width=6}
+# Y ya teniendo la tendencia la podemos remover de la serie de tiempo para tener
+# unicamente los ciclos y la parte aleatoria:
+datossintendencia <- logTeslaData - modelo2$fit
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(datossintendencia, col = "springgreen1", main = "Serie con log, sin tendencia", 
+     lwd = 3, xlab = "Tiempo", ylab = " ")}
+```
+
+```{r, echo=FALSE, include=FALSE,  fig.height= 3, fig.width=6}
+ciclo <- factor(cycle(logTeslaData))
+modelo3 <- lm(datossintendencia ~ ciclo)
+summary(modelo3)
+```
+
+```{r, echo=FALSE, include=FALSE,  fig.height= 3, fig.width=6}
+# Ciclos
+datosciclo <- ts(fitted(modelo3), start = c(2010,6), frequency = 12)
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(datosciclo, col = "springgreen4" ,main = "Ciclos de la serie con log", 
+      lwd = 3, xlab = "Tiempo",
+     ylab = " ")
+  minor.tick(nx = 8, tick.ratio = 0.5)
+}
+```
+
+```{r, echo=FALSE, include=FALSE, fig.height= 2.5, fig.width=6}
+#En la componente aleatoria, hay que recordar que  $Y_t = X_t - m_t - s_t$, de donde:
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(datossintendencia - datosciclo, col = "springgreen", main = "Componente aleatoria
+      de la serie con log",
+     lwd = 2, xlab = "Tiempo", ylab = " ")}
+```
+
+## \colorbox{cyan}{Descomposición por defecto de R.}
+
+```{r, echo = FALSE, include=TRUE, fig.align = 'center', fig.height= 4.5, fig.width=6}
+plot(decompose(logTeslaData))
+```
+
+## \colorbox{cyan}{Diferencias.}
+
+Empleando el operador \textit{diff} dado por $Y_{t} = \nabla X'_{t} - X'_{t-1}$
+se elimina la tendencia:
+
+```{r, echo = FALSE, include=TRUE, fig.align = 'center', fig.height= 3.5, fig.width=6}
+difst <- diff(log(TeslaStockData))
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(difst, col="green", main = 'Serie de tiempo sin tendencia', lwd = 2, xlab = "Tiempo", 
+      ylab = " ")}
+```
+
+Eliminando los ciclos estacionarios con $W_{t} = \nabla_{12} X'_{t} = X'_{t}- X'_{t-12}$
+obtenemos la componente aleatoria:
+
+```{r, echo = FALSE, include=TRUE, fig.align = 'center', fig.height= 3.5, fig.width=6}
+nocycle <- diff(difst, lag = 12)
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(nocycle, col = "green", main = 'Componente aleatoria',  lwd = 2, xlab = "Tiempo", 
+      ylab = " ")}
+```
+
+# \colorbox{yellow}{4. Realizar un ajuste de series de tiempo adecuado.}
+
+\textbf{El modelo puede ser ARIMA, SARIMA o modelos GARCH.}
+
+Para empezar a modelar hay que verificar que la serie sea homocedástica. 
+Recordemos que los datos de la serie original no  tienen varianza constante.
+
+```{r, echo= FALSE, include=FALSE}
+# Modelo lineal
+t = seq(2010+6/12,2020 + 7/12,by=1/12)
+t2 = t*t
+modelo4 <- lm(TeslaStockData ~ t + t2)
+Y4 <- as.numeric(modelo4$residuals)
+X4 <- 1:length(modelo4$residuals)
+```
+
+```{r, echo= FALSE, include=TRUE}
+bptest(Y4 ~ X4)
+```
+
+Así que se tienen que transformar los datos para que tengan una varianza constante.
+
+Para ello se realizará la transformación por medio de dos métodos: 
+
+- En el primero, se le aplicará un logaritmo a la  serie original
+
+- En segundo, se realizará la transformación Box-Cox  por método Guerrero
+
+
+## \colorbox{Lavender}{Logaritmo}
+
+```{r, echo=TRUE}
+Teslalog <- log(TeslaStockData)
+```
+
+```{r, echo=FALSE, include=FALSE}
+plot(Teslalog, col = "springgreen", xlab = "Tiempo", ylab = "", main = "log(datos)",
+     lwd = 3)
+```
+
+```{r, echo= FALSE, include=TRUE}
+modelo5 <- lm(Teslalog ~ t)
+
+Y5 <- as.numeric(modelo5$residuals)
+X5 <- 1:length(modelo5$residuals)
+```
+
+Para saber si se cumple la varianza constante,  se realiza el $bptest$, de donde:
+
+```{r, echo= FALSE, include=TRUE}
+bptest(Y5 ~ X5)
+```
+
+Así, se obtiene un $p-value = 0.9 > 0.05$, con lo cual, ya no se rechaza $H_0$ y 
+así,  se confirma que los datos ya tienen varianza constante.
+
+
+## \colorbox{SeaGreen}{BoxCox Guerrero}
+
+En este caso primero se genera la lambda y posteriormente se generan los datos:
+
+```{r, echo=FALSE, include=FALSE}
+(lambda1 = BoxCox.lambda(TeslaStockData, method = "guerrero"))
+```
+
+```{r, echo=TRUE}
+TeslaGuerrero = BoxCox(TeslaStockData, lambda1)
+```
+
+```{r, echo=FALSE, include=FALSE}
+plot(TeslaGuerrero, col = "plum", lwd = 3, xlab = "Tiempo", ylab = " ",
+     main = "Transformacion BoxCox Guerrero"  )
+```
+
+```{r, echo= FALSE, include=FALSE}
+modelo6 <- lm(TeslaGuerrero ~ t)
+
+Y6 <- as.numeric(modelo6$residuals)
+X6 <- 1:length(modelo6$residuals)
+```
+
+Y finalmente para saber si existe varianza constante, se realiza la \textit{Prueba
+de Breusch-Pagan}
+
+```{r, echo= FALSE, include=TRUE}
+bptest(Y6 ~ X6)
+```
+
+De donde, resulta un $p-value = 0.1$, con lo cual, no se rechaza $H_0$ y se confirma
+que los datos tienen varianza constante.
+
+```{r, echo=FALSE, include=FALSE}
+#Para loglik:
+# Obtenemos primero la lamda
+(lambda2 = BoxCox.lambda(TeslaStockData, method = "loglik"))
+```
+
+```{r, echo=FALSE}
+#Y generamos los datos:
+TeslaLoglik = BoxCox(TeslaStockData, lambda2)
+```
+
+```{r, echo=FALSE, include=FALSE}
+plot(TeslaLoglik, col = "red", lwd = 3, xlab = "Tiempo", ylab = " ",
+     main = "Transformacion BoxCox Loglik" )
+```
+
+```{r, echo= FALSE, include=FALSE}
+modelo7 <- lm(TeslaLoglik ~ t)
+Y7 <- as.numeric(modelo7$residuals)
+X7 <- 1:length(modelo7$residuals)
+```
+
+```{r, echo= FALSE, include=FALSE}
+#Para saber si tenemos varianza constante, debemos realizar alguna prueba.
+#Aquí realizamos el bptest, donde obtenemos:
+bptest(Y7 ~ X7)
+```
+
+# \colorbox{yellow}{Realización auto.arima}
+
+## \colorbox{Lavender}{Logaritmo}
+
+```{r, echo= TRUE}
+(fit1 <- auto.arima(Teslalog, allowdrift = F))
+```
+Por lo que para estos datos tenemos un ARIMA(1,1,1)
+
+## \colorbox{SeaGreen}{BoxCox Guerrero}
+
+```{r, echo= TRUE}
+(fit2 <- auto.arima(TeslaGuerrero, allowdrift = F))
+```
+Obtenemos un ARIMA(1,1,0)
+
+```{r, echo= FALSE, include=FALSE}
+# Para la transformación BoxCox loglik:
+(fit3 <- auto.arima(TeslaLoglik, allowdrift = F))
+```
+
+## \colorbox{yellow}{Significancia de los parámetros.}
+
+### \colorbox{Lavender}{Logaritmo}
+
+```{r, echo= FALSE, include=TRUE}
+confint(fit1)
+```
+Todos los parámetros son significantes, ya que, ninguno contiene al 0 en su
+intervalo de confianza.
+
+### \colorbox{SeaGreen}{BoxCox Guerrero}
+
+```{r, echo= FALSE, include=TRUE}
+confint(fit2)
+```
+En este caso el parámetro no es significante, ya que, $ar1$ contiene al 0 en su 
+intervalo de confianza.
+
+```{r, echo= FALSE, inlcude=FALSE}
+#loglik
+#confint(fit3)
+```
+
+## \colorbox{yellow}{Ajuste de los datos.}
+
+### \colorbox{Lavender}{Logaritmo}
+
+```{r, echo= FALSE, include=TRUE, fig.align = 'center', fig.height= 3, fig.width=6}
+ajuste1 <- Teslalog - residuals(fit1)
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(Teslalog, lwd = 3, xlab = "Tiempo", ylab = "", main = "Logaritmo")
+points(ajuste1, type = "l", col = "pink", lty = 2, lwd = 3)
+legend("bottomright", col = c("black","pink"), lty = c(1,2), lwd = 2, bty = "n",
+       legend = c("Originales","Modelo"))}
+```
+
+### \colorbox{SeaGreen}{BoxCox Guerrero}
+
+```{r, echo= FALSE, include=TRUE, fig.align = 'center', fig.height= 3, fig.width=6}
+ajuste2 <- TeslaGuerrero - residuals(fit2)
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+{plot(TeslaGuerrero, lwd = 3, xlab = "Tiempo", ylab = "", main = "Guerrero")
+points(ajuste2, type = "l", col = "springgreen2", lty = 2, lwd = 3)
+legend("bottomright", col = c("black","springgreen2"), lty = c(1,2), lwd = 2, bty = "n",
+       legend = c("Originales","Modelo"))}
+```
+
+```{r, echo= FALSE, include=FALSE}
+#Para BoxCox loglik:
+ajuste3 <- TeslaLoglik - residuals(fit3)
+plot(TeslaLoglik, lwd = 3, xlab = "Tiempo", ylab = "", main = "loglik")
+points(ajuste3, type = "l", col = "springgreen4", lty = 2, lwd = 3)
+legend("bottomright", col = c("black","springgreen4"), lty = c(1,2), lwd = 2, bty = "n",
+       legend = c("Originales","Modelo"), cex = 1)
+```
+
+```{r, echo= F, include=FALSE}
+#Para los dos tipos de datos, parece que el modelaje es el correcto.
+#Haremos una comparación de sus errores:
+uno <- cbind("LOGARITMO","ARIMA(1,1,1)", 2,fit1$aic, fit1$bic, mean(fit1$residuals), mean(abs(fit1$residuals)), sqrt(mean(fit1$residuals^2)))
+```
+
+```{r, echo= F}
+dos <- cbind("GUERRERO","ARIMA(1,1,0)", 1,fit2$aic, fit2$bic, mean(fit2$residuals), mean(abs(fit2$residuals)), sqrt(mean(fit2$residuals^2)))
+```
+
+```{r, echo= F}
+tres <- cbind("LOGLIK","ARIMA(2,0,0)x(2,1,0)[4]", 4,fit3$aic, fit3$bic, mean(fit3$residuals), mean(abs(fit3$residuals)), sqrt(mean(fit3$residuals^2)))
+```
+
+```{r, echo= F}
+nombres <- cbind("DATOS","MODELO", "PARÁMETROS", "AIC", "BIC", "ME", "MAE", "RMSE")
+```
+
+```{r, echo= F, include=FALSE}
+comparacion <- as.table(rbind(uno,dos))
+colnames(comparacion) <- nombres
+rownames(comparacion) <- c(" "," ")
+```
+
+```{r, echo= F, include=FALSE}
+comparacion
+```
+
+# \colorbox{yellow}{5. Revisar supuestos del modelo.}
+
+## \colorbox{Lavender}{Correlograma para logaritmo}
+
+```{r, echo= F, include=TRUE, fig.align = 'center'}
+tsdisplay(fit1$residuals)
+```
+
+Parece que en el lag=4 está al limite de la banda de confianza, pero no se sale,
+por lo que  aparenta no  tener errores significativos.
+
+## \colorbox{SeaGreen}{Correlograma para Método Guerrero}
+
+```{r, echo= F, include=TRUE}
+tsdisplay(fit2$residuals)
+```
+
+Vemos que solo en el lag 4 podría dar problemas, pero no es tan significativo su 
+valor sobrante después de la banda de confianza.
+
+```{r, echo= F, include=FALSE}
+# loglik
+tsdisplay(fit3$residuals)
+# Vemos lo mismo que con el método Guerrero, pero igual no parece ser relevante 
+# su salida de la  banda de confianza.
+```
+
+## \colorbox{Lavender}{Residuos con media cero para logaritmo}
+
+```{r, echo= F, include=TRUE}
+t.test(fit1$residuals)
+```
+
+Con un $p-value = 0.2$, y una media estimada con un valor de 0.0206, se puede concluir
+que los residuos tienen media cero.
+
+## \colorbox{SeaGreen}{Residuos con media cero por Método Guerrero}
+
+```{r, echo= F, include=TRUE}
+t.test(fit2$residuals)
+```
+
+Con un $p-value = 0.02, y una media estimada con un valor de 0.0222, se puede decir 
+que los residuos no tienen media cero.
+
+```{r, echo= F, include=FALSE}
+#oglik:
+t.test(fit3$residuals)
+```
+
+## \colorbox{Lavender}{Varianza constante para residuos de logaritmo}
+
+```{r, echo= F, include=TRUE}
+bptest(fit1$residuals ~ t)
+```
+
+Se obtiene un $p-value$ = 0.6, con lo cual no se rechaza $H_0$ y se confirma que la
+varianza es constante.
+
+## \colorbox{SeaGreen}{Varianza constante para residuos por Método Guerrero}
+
+```{r, echo= F, include=TRUE}
+bptest(fit2$residuals ~ t)
+```
+
+Se obtiene un $p-value$ = 0.4, con lo cual no se rechaza $H_0$ y se confirma que 
+la varianza también es constante.
+
+```{r, echo= F, include=FALSE}
+#loglik
+bptest(fit3$residuals ~ t)
+```
+
+## \colorbox{Lavender}{Residuos con distribución normal para logaritmo}
+
+```{r, echo= F, include=FALSE}
+qqnorm(fit1$residuals, col = "springgreen4", lwd =3)
+qqline(fit1$residuals, lwd = 2)
+```
+
+```{r, echo= F, include=TRUE}
+ad.test(fit1$residuals)
+shapiro.test(fit1$residuals)
+jarque.bera.test(fit1$residuals)
+```
+
+Para este modelo solo pasa la \textit{Prueba de Anderson-Darling}, por lo que, no 
+hay suficientes  pruebas para decir que los datos se distribuyen normal.
+
+## \colorbox{SeaGreen}{Residuos con distribución normal para Método Guerrero}
+
+```{r, echo= F, include=FALSE}
+qqnorm(fit2$residuals, col = "springgreen4", lwd =3)
+qqline(fit2$residuals, lwd = 2)
+```
+
+```{r, echo= F, include=TRUE}
+ad.test(fit2$residuals)
+shapiro.test(fit2$residuals)
+jarque.bera.test(fit2$residuals)
+```
+
+Para este modelo no pasa los Test, por lo que, no hay  pruebas para decir que los
+datos se distribuyen normal.
+
+```{r, echo= F, include=FALSE}
+#loglik:
+qqnorm(fit3$residuals, col = "springgreen4", lwd =3)
+qqline(fit3$residuals, lwd = 2)
+```
+
+
+```{r, echo= F, include=FALSE}
+ad.test(fit3$residuals)
+shapiro.test(fit3$residuals)
+jarque.bera.test(fit3$residuals)
+```
+\newpage
+
+## \colorbox{Lavender}{Datos independientes para Logaritmo}
+
+```{r, echo= F, include=TRUE}
+ggtsdisplay(fit1$residuals)
+```
+
+Parece que tenemos problemas con el lag = 4.
+
+Primero realizamos la prueba general:
+
+```{r, echo= F, include=TRUE}
+Box.test(fit1$residuals)
+```
+
+Al tener un $p-value = 0.8$, no rechazamos $H_0$ y podemos decir que los datos 
+son independientes.
+
+Ahora, para el lag = 4:
+
+```{r, echo= F, include=TRUE}
+Box.test(fit1$residuals, lag = 4)
+```
+
+Tiene un $p-value = 0.2$, por lo que no hay  problema y así se puede decir que 
+los datos son independientes.
+
+```{r, echo= F, include=TRUE}
+tsdiag(fit1, gof.lag = 50)
+```
+
+Vemos que por el lag 4 y 5 tenemos un pequeño problema.
+
+```{r, echo= F, include=TRUE}
+checkresiduals(fit1)
+```
+
+Con un $p-value$ = 0.8, si pasa la prueba Ljung Box.
+
+Por lo que si son  datos independientes.
+
+\newpage
+
+## \colorbox{SeaGreen}{Datos independientes por Método Guerrero}
+
+```{r, echo= F, include=TRUE}
+ggtsdisplay(fit2$residuals)
+```
+
+Parece que  nuevamente hay problemas con el lag=4
+
+Así que se  realiza la prueba general:
+
+```{r, echo= F, include=TRUE}
+Box.test(fit2$residuals)
+```
+
+Al tener un $p-value = 0.7$, no rechazamos $H_0$ y se puede concluir que los datos son independientes.
+
+Ahora, para el lag = 4:
+
+```{r, echo= F, include=TRUE}
+Box.test(fit2$residuals, lag = 4)
+```
+
+Tiene un $p-value = 0.1$, por lo que no hay  problema y así se puede decir que 
+los datos son independientes.
+
+```{r, echo= F, include=TRUE}
+tsdiag(fit2, gof.lag = 50)
+```
+
+Se aprecia que por el lag 4 y 5 hay un pequeño problema.
+
+```{r, echo= F, include=TRUE}
+checkresiduals(fit2)
+```
+
+Con un $p-value$ = 0.8, si pasa la prueba Ljung Box.
+
+Por lo que si son  datos independientes.
+
+```{r, echo= F, include=F}
+#loglik:
+ggtsdisplay(fit3$residuals)
+```
+
+```{r, echo= F, include=F}
+#Tenemos que checar en específico el lag = 5.
+#Primero realizamos la prueba general:
+Box.test(fit3$residuals)
+```
+
+```{r, echo= F, include=F}
+#Al tener un $p-value$ = 0.8, no rechazamos $H_0$ y podemos decir que nuestros datos son independientes.
+#Para el lag = 5:
+Box.test(fit3$residuals , lag = 5)
+```
+
+```{r, echo= F, include=F}
+#Al tener un $p-value$ = 0.8, no rechazamos $H_0$ y podemos decir que nuestros datos son independientes.
+#Para el lag = 5:
+
+tsdiag(fit3, gof.lag = 50)
+```
+
+```{r, echo= F, include=F}
+checkresiduals(fit3)
+```
+
+\newpage
+
+## \colorbox{yellow}{Comparativa.}
+
+```{r, echo= F}
+cuatro <- cbind("LOGARITMO","ARIMA(1,1,1)", 2, "Sí", "Sí", "No", "Sí")
+```
+
+```{r, echo= F}
+cinco <- cbind("GUERRERO","ARIMA(1,1,0)", 1, "No", "Sí", "No", "Sí")
+```
+
+```{r, echo= F}
+seis <- cbind("LOGLIK","ARIMA(2,0,0)x(2,1,0)[4]", 4, "Sí", "Sí","Sí", "Sí")
+```
+
+```{r, echo= F}
+nombres2 <- cbind("DATOS","MODELO", "PARÁMETROS", "MEDIA CERO", "VARIANZA CONSTANTE", "NORMALIDAD", "INDEPENDENCIA")
+```
+
+```{r, echo= F}
+comparacion2 <- as.table(rbind(cuatro,cinco))
+colnames(comparacion2) <- nombres2
+rownames(comparacion2) <- c(" "," ")
+```
+
+```{r, echo= F}
+comparacion2
+```
+
+En este caso se tiene una disyuntiva para elegir el mejor modelo:
+
+- El modelo ARIMA(1,1,1) tiene dos parámetros, pero tiene media cero.
+
+- Por otro lado, el modelo ARIMA(1,1,0) solo tiene un parámetro, pero no tiene
+media cero.
+
+Pero al tomar como criterio la cantidad de  parámetros, el mejor modelo es el 
+ARIMA(1,1,0).
+
+# \colorbox{yellow}{5. Realizar pronósticos.}
+
+Para Logaritmo tenemos que la predicción a dos años es:
+
+```{r, echo= FALSE, include=TRUE}
+pred1 <- predict(fit1, n.ahead = 36)
+r1 <- exp(pred1$pred)
+s1 <- exp(pred1$se)
+tl <- pred1$pred - 2.959964 * pred1$se
+tu <- pred1$pred + 2.959964 * pred1$se
+tl1 <- r1 - 2.959964 * s1
+tu1 <- r1 + 2.959964 * s1
+```
+
+Para los datos transformados:
+
+```{r, echo= FALSE, include=TRUE}
+ts.plot(Teslalog, pred1$pred, tl, tu, lty=c(1,1,2,2), lwd=2, col=c(1,2,4,4), 
+        main="Serie con logaritmo")
+```
+
+Para los datos originales:
+
+```{r, echo= FALSE, include=FALSE}
+ts.plot(TeslaStockData, r1, tl1, tu1, lty=c(1,1,2,2), lwd=2, col=c(1,2,4,4), 
+        main="Serie original")
+```
+
+Para Guerrero tenemos que la predicción a dos años es:
+
+```{r, echo= FALSE, include=TRUE}
+pred2 <- predict(fit2, n.ahead = 36)
+
+r2 <- InvBoxCox(pred2$pred, lambda = lambda1)
+s2 <- InvBoxCox(pred2$se,lambda = lambda1)
+
+tlg <- pred2$pred - 2.959964 * pred2$se
+tug <- pred2$pred + 2.959964 * pred2$se
+tl2 <- r2 - 2.959964 * s2
+tu2 <- r2 + 2.959964 * s2
+```
+
+Para los datos transformados:
+
+```{r, echo= FALSE, include=TRUE}
+ts.plot(TeslaGuerrero, pred2$pred, tlg, tug, lty=c(1,1,2,2), lwd=2, col=c(1,2,4,4), main="Guerrero")
+```
+
+Para los datos originales:
+
+```{r, echo= FALSE, include=FALSE}
+ts.plot(TeslaStockData, r2, tl2, tu2, lty=c(1,1,2,2), lwd=2, col=c(1,2,4,4), 
+        main="Original")
+```
+
+# \colorbox{yellow}{Conclusiones.}
+
+
+En conclusión, las predicciones no son las mejores, pero no son tan alejadas 
+considerando que son años de mucha incertidumbre.
+
+Todavia se puede mejorar el modelo, quizá a un modelo GARCH para series financieras.
+
+
